@@ -53,6 +53,20 @@ resource "google_compute_instance" "vm_builder" {
     }
   }
 
+  # Copies the credentials to GCP as the root user using SSH
+  provisioner "file" {
+    source      = "/home/User/devops-school-317412-e388b05e76b4.json"
+    destination = "/opt/cred.json"
+
+    connection {
+      host        = self.network_interface[0].access_config[0].nat_ip
+      type        = "ssh"
+      user        = "root"
+      private_key = "${file("${var.private_key_path}")}"
+      agent       = false
+    }
+  }
+
   provisioner "remote-exec" {
     connection {
       host        = self.network_interface[0].access_config[0].nat_ip
@@ -65,7 +79,10 @@ resource "google_compute_instance" "vm_builder" {
     inline = [
       "sudo curl -sSL https://get.docker.com/ | sh",
       "sudo usermod -aG docker `echo $USER`",
-      "cd /tmp", 
+      "sudo gcloud auth activate-service-account --key-file /opt/cred.json",
+      "sudo gcloud auth configure-docker -q",
+      "sudo docker login gcr.io/devops-school-317412",
+      "cd /tmp",
       "sudo docker build -t box_app:1.0 .",
       "sudo docker tag box_app:1.0 gcr.io/devops-school-317412/box_app:1.0",
       "sudo docker push gcr.io/devops-school-317412/box_app:1.0"
