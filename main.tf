@@ -15,7 +15,7 @@ provider "google" {
 
 
 #######################################################
-# Create instances
+# Create builder instance
 #######################################################
 resource "google_compute_instance" "vm_builder" {
   name         = "builder"
@@ -86,6 +86,70 @@ resource "google_compute_instance" "vm_builder" {
       "sudo docker build -t box_app:1.0 .",
       "sudo docker tag box_app:1.0 gcr.io/devops-school-317412/box_app:1.0",
       "sudo docker push gcr.io/devops-school-317412/box_app:1.0"
+    ]
+  }
+}
+
+#######################################################
+# Create production instance
+#######################################################
+resource "google_compute_instance" "vm_production" {
+  name         = "production"
+  machine_type = "e2-custom-2-2048"
+
+  # Set start order. After build
+  depends_on = [google_compute_instance.vm_builder]
+
+  boot_disk {
+    initialize_params {
+      image = "ubuntu-os-cloud/ubuntu-2004-lts"
+    }
+  }
+
+  network_interface {
+    # A default network is created for all GCP projects
+    network = "default"
+    access_config {
+    }
+  }
+
+  # Write public key in to the metadata item GCP
+  metadata = {
+    ssh-keys = "root:${file("${var.public_key_path}")}"
+  }
+
+  # Copies the credentials to GCP as the root user using SSH
+  provisioner "file" {
+    source      = "/home/User/devops-school-317412-e388b05e76b4.json"
+    destination = "/opt/cred.json"
+
+    connection {
+      host        = self.network_interface[0].access_config[0].nat_ip
+      type        = "ssh"
+      user        = "root"
+      private_key = "${file("${var.private_key_path}")}"
+      agent       = false
+    }
+  }
+
+  provisioner "remote-exec" {
+    connection {
+      host        = self.network_interface[0].access_config[0].nat_ip
+      type        = "ssh"
+      user        = "root"
+      private_key = "${file("${var.private_key_path}")}"
+      agent       = false
+    }
+
+    inline = [
+      "sudo apt update",
+      "sudo apt install docker.io -y",
+      "sudo usermod -aG docker `echo $USER`",
+      "sudo gcloud auth activate-service-account --key-file /opt/cred.json",
+      "sudo gcloud auth configure-docker -q",
+      "sudo docker login gcr.io/devops-school-317412",
+      "sudo docker pull gcr.io/devops-school-317412/box_app:1.0",
+      "sudo docker run -d -p 8090:8080 --name web_app gcr.io/devops-school-317412/box_app:1.0"
     ]
   }
 }
