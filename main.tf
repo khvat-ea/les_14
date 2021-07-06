@@ -19,14 +19,15 @@ provider "google" {
 #######################################################
 module "srv_build" {
   source = "./modules/instance"
-  public_key_path = "~/.ssh/gcloud_id_rsa.pub"
-  private_key_path = "~/.ssh/gcloud_id_rsa"
+  public_key_path = "${var.public_key_path}"
+  private_key_path = "${var.private_key_path}"
   name = "builder"
   cpu = 2
   ram = 2
   image = "ubuntu-os-cloud/ubuntu-2004-lts"
 }
 resource "null_resource" "srv_build" {
+  depends_on = [module.srv_build]
      # Copies the Dockerfile as the root user using SSH
   provisioner "file" {
     source      = "./Dockerfile"
@@ -43,11 +44,11 @@ resource "null_resource" "srv_build" {
 
   # Copies the credentials to GCP as the root user using SSH
   provisioner "file" {
-    source      = "/home/User/devops-school-317412-e388b05e76b4.json"
+    source      = "${var.service_account_key}"
     destination = "/opt/cred.json"
 
     connection {
-      host        = self.network_interface[0].access_config[0].nat_ip
+      host        = module.srv_build.host_ip
       type        = "ssh"
       user        = "root"
       private_key = "${file("${var.private_key_path}")}"
@@ -56,7 +57,7 @@ resource "null_resource" "srv_build" {
   }
   provisioner "remote-exec" {
     connection {
-      host        = self.network_interface[0].access_config[0].nat_ip
+      host        = module.srv_build.host_ip
       type        = "ssh"
       user        = "root"
       private_key = "${file("${var.private_key_path}")}"
@@ -85,8 +86,8 @@ module "srv_prod" {
   depends_on = [module.srv_build]
 
   source = "./modules/instance"
-  public_key_path = "~/.ssh/gcloud_id_rsa.pub"
-  private_key_path = "~/.ssh/gcloud_id_rsa"
+  public_key_path = "${var.public_key_path}"
+  private_key_path = "${var.private_key_path}"
   name = "production"
   cpu = 2
   ram = 2
@@ -94,9 +95,11 @@ module "srv_prod" {
 }
 
 resource "null_resource" "srv_prod" {
+  depends_on = [module.srv_prod,
+                null_resource.srv_build]
   # Copies the credentials to GCP as the root user using SSH
   provisioner "file" {
-    source      = "/home/User/devops-school-317412-e388b05e76b4.json"
+    source      = "${var.service_account_key}"
     destination = "/opt/cred.json"
 
     connection {
@@ -110,7 +113,7 @@ resource "null_resource" "srv_prod" {
 
   provisioner "remote-exec" {
     connection {
-      host        = self.network_interface[0].access_config[0].nat_ip
+      host        = module.srv_prod.host_ip
       type        = "ssh"
       user        = "root"
       private_key = "${file("${var.private_key_path}")}"
