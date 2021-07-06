@@ -17,35 +17,23 @@ provider "google" {
 #######################################################
 # Create builder instance
 #######################################################
-resource "google_compute_instance" "vm_builder" {
-  name         = "builder"
-  machine_type = "e2-custom-2-2048"
-
-  boot_disk {
-    initialize_params {
-      image = "ubuntu-os-cloud/ubuntu-2004-lts"
-    }
-  }
-
-  network_interface {
-    # A default network is created for all GCP projects
-    network = "default"
-    access_config {
-    }
-  }
-
-  # Write public key in to the metadata item GCP
-  metadata = {
-    ssh-keys = "root:${file("${var.public_key_path}")}"
-  }
-
-  # Copies the Dockerfile as the root user using SSH
+module "srv_build" {
+  source = "./modules/instance"
+  public_key_path = "~/.ssh/gcloud_id_rsa.pub"
+  private_key_path = "~/.ssh/gcloud_id_rsa"
+  name = "builder"
+  cpu = 2
+  ram = 2
+  image = "ubuntu-os-cloud/ubuntu-2004-lts"
+}
+resource "null_resource" "srv_build" {
+     # Copies the Dockerfile as the root user using SSH
   provisioner "file" {
     source      = "./Dockerfile"
     destination = "/tmp/Dockerfile"
 
     connection {
-      host        = self.network_interface[0].access_config[0].nat_ip
+      host        = module.srv_build.host_ip
       type        = "ssh"
       user        = "root"
       private_key = "${file("${var.private_key_path}")}"
@@ -66,7 +54,6 @@ resource "google_compute_instance" "vm_builder" {
       agent       = false
     }
   }
-
   provisioner "remote-exec" {
     connection {
       host        = self.network_interface[0].access_config[0].nat_ip
@@ -93,38 +80,27 @@ resource "google_compute_instance" "vm_builder" {
 #######################################################
 # Create production instance
 #######################################################
-resource "google_compute_instance" "vm_production" {
-  name         = "production"
-  machine_type = "e2-custom-2-2048"
-
+module "srv_prod" {
   # Set start order. After build
-  depends_on = [google_compute_instance.vm_builder]
+  depends_on = [module.srv_build]
 
-  boot_disk {
-    initialize_params {
-      image = "ubuntu-os-cloud/ubuntu-2004-lts"
-    }
-  }
+  source = "./modules/instance"
+  public_key_path = "~/.ssh/gcloud_id_rsa.pub"
+  private_key_path = "~/.ssh/gcloud_id_rsa"
+  name = "production"
+  cpu = 2
+  ram = 2
+  image = "ubuntu-os-cloud/ubuntu-2004-lts"
+}
 
-  network_interface {
-    # A default network is created for all GCP projects
-    network = "default"
-    access_config {
-    }
-  }
-
-  # Write public key in to the metadata item GCP
-  metadata = {
-    ssh-keys = "root:${file("${var.public_key_path}")}"
-  }
-
+resource "null_resource" "srv_prod" {
   # Copies the credentials to GCP as the root user using SSH
   provisioner "file" {
     source      = "/home/User/devops-school-317412-e388b05e76b4.json"
     destination = "/opt/cred.json"
 
     connection {
-      host        = self.network_interface[0].access_config[0].nat_ip
+      host        = module.srv_prod.host_ip
       type        = "ssh"
       user        = "root"
       private_key = "${file("${var.private_key_path}")}"

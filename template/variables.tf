@@ -23,5 +23,4 @@ variable "ram" {
 variable "image" {
   description = "Set name of image"
   default     = "ubuntu-os-cloud/ubuntu-2004-lts"
- 
 }
